@@ -5,63 +5,76 @@ User guide
 Basic usage
 ===========
 
-To trim a 3' adapter, the basic command-line for cutadapt is::
+To trim a 3' adapter, the basic command-line for Cutadapt is::
 
     cutadapt -a AACCGGTT -o output.fastq input.fastq
 
 The sequence of the adapter is given with the ``-a`` option. You need to replace
-``AACCGGTT`` with your actual adapter sequence. Reads are read from the input
-file ``input.fastq`` and written to the output file ``output.fastq``.
+``AACCGGTT`` with the correct adapter sequence. Reads are read from the input
+file ``input.fastq`` and are written to the output file ``output.fastq``.
+
+Compressed in- and output files are also supported::
+
+    cutadapt -a AACCGGTT -o output.fastq.gz input.fastq.gz
 
 Cutadapt searches for the adapter in all reads and removes it when it finds it.
-All reads that were present in the input file will also be present in the output
-file, some of them trimmed, some of them not. Even reads that were trimmed
-entirely (because the adapter was found in the very beginning) are output. All
-of this can be changed with command-line options, explained further down.
+Unless you use a filtering option, all reads that were present in the input file
+will also be present in the output file, some of them trimmed, some of them not.
+Even reads that were trimmed entirely (because the adapter was found in the very
+beginning) are output. All of this can be changed with command-line options,
+explained further down.
+
+:ref:`Trimming of paired-end data <paired-end>` is also supported.
 
 
 Input and output file formats
 -----------------------------
 
-Input files for cutadapt need to be in one the these formats:
+Input and output files need to be in FASTA or FASTQ format. Reading and writing
+compressed file formats ``.gz``, ``.bz2`` or ``.xz`` is also supported. Cutadapt
+uses ``pigz`` internally if possible to speed up writing and reading of
+gzipped files.
 
-* FASTA (file name extensions: ``.fasta``, ``.fa``, ``.fna``)
-* FASTQ (extensions: ``.fastq``, ``.fq``)
-* Any of the above, but compressed as ``.gz`` (even ``.bz2`` and ``.xz`` are supported).
+The input file format is recognized from the file name extension. If the
+extension was not recognized or when Cutadapt reads from standard input,
+the contents are inspected instead.
 
-:ref:`Cutadapt’s support for processing of colorspace data is described
-elsewhere <colorspace>`.
+The output file format is also recognized from the file name extension. If the
+extensions was not recognized or when Cutadapt writes to standard input, the
+same format as the input is used for the output.
 
-Input and output file formats are recognized from the file name extension. You
-can override the input format with the ``--format`` option.
+You can use this to convert from FASTQ to FASTA (without doing any adapter
+trimming)::
 
-You can even use this -- without any adapter trimming -- to convert from
-FASTQ to FASTA::
+    cutadapt -o output.fasta.gz input.fastq.gz
 
-    cutadapt -o output.fasta input.fastq.gz
+When you want to do the same (read FASTQ, write FASTA), but want to write to
+standard output, you need to use ``--fasta`` instead because there is no
+output file name::
 
+    cutadapt --fasta input.fastq.gz > out.fasta
+
+
+.. _compressed-files:
 
 Compressed files
 ----------------
 
 Cutadapt supports compressed input and output files. Whether an input file
 needs to be decompressed or an output file needs to be compressed is detected
-automatically by inspecting the file name: If it ends in ``.gz``, then gzip
-compression is assumed. You can therefore run cutadapt like this and it works
-as expected::
+automatically by inspecting the file name: For example, if it ends in ``.gz``,
+then gzip compression is assumed ::
 
     cutadapt -a AACCGGTT -o output.fastq.gz input.fastq.gz
 
-All of cutadapt's options that expect a file name support this.
+All of Cutadapt's options that expect a file name support this.
 
-Files compressed with bzip2 (``.bz2``) or xz (``.xz``) are also supported, but
-only if the Python installation includes the proper modules. xz files require
-Python 3.3 or later.
+The supported compression formats are gzip (``.gz``), bzip2 (``.bz2``)
+and xz (``.xz``).
 
-Concatenated bz2 files are *not supported* on Python versions before 3.3.
-These files are created by utilities such as ``pbzip2`` (parallel bzip2).
-
-Concatenated gz files *are* supported on all supported Python versions.
+The default compression level for gzip output is 6. Use option ``-Z`` to
+change this to level 1. The files need more space, but it is faster and
+therefore a good choice for short-lived intermediate files.
 
 
 Standard input and output
@@ -73,25 +86,28 @@ can therefore also write::
 
     cutadapt -a AACCGGTT input.fastq > output.fastq
 
-There is one difference in behavior if you use cutadapt without ``-o``: The
+There is one difference in behavior if you use Cutadapt without ``-o``: The
 report is sent to the standard error stream instead of standard output. You
 can redirect it to a file like this::
 
     cutadapt -a AACCGGTT input.fastq > output.fastq 2> report.txt
 
-Wherever cutadapt expects a file name, you can also write a dash (``-``) in
+Wherever Cutadapt expects a file name, you can also write a dash (``-``) in
 order to specify that standard input or output should be used. For example::
 
     tail -n 4 input.fastq | cutadapt -a AACCGGTT - > output.fastq
 
 The ``tail -n 4`` prints out only the last four lines of ``input.fastq``, which
-are then piped into cutadapt. Thus, cutadapt will work only on the last read in
+are then piped into Cutadapt. Thus, Cutadapt will work only on the last read in
 the input file.
 
 In most cases, you should probably use ``-`` at most once for an input file and
 at most once for an output file, in order not to get mixed output.
 
-You cannot combine ``-`` and gzip compression since cutadapt needs to know the
+For the same reason, you should not use ``-`` for non-interleaved paired-end
+data.
+
+You cannot combine ``-`` and gzip compression since Cutadapt needs to know the
 file name of the output or input file. if you want to have a gzip-compressed
 output file, use ``-o`` with an explicit name.
 
@@ -103,16 +119,92 @@ you could use something like this::
     cutadapt -a AACCGGTT -o /dev/null input.fastq
 
 
-Read processing
-===============
+.. _multicore:
+
+Multi-core support
+------------------
+
+Cutadapt supports parallel processing, that is, it can use multiple CPU cores.
+Multi-core is not enabled by default. To enable it, use the option ``-j N``
+(or the spelled-out version ``--cores=N``), where ``N`` is the
+number of cores to use.
+
+To automatically detect the number of available cores, use ``-j 0``
+(or ``--cores=0``). The detection takes into account resource restrictions
+that may be in place. For example, if running Cutadapt as a batch job on a
+cluster system, the actual number of cores assigned to the job will be used.
+(This works if the cluster systems uses the cpuset(1) mechanism to impose
+the resource limitation.)
+
+Make also sure that you have ``pigz`` (parallel gzip) installed if you use
+multiple cores and write to a ``.gz`` output file. Otherwise, compression of
+the output will be done in a single thread and therefore be a bottleneck.
+
+There are some limitations at the moment:
+
+* Multi-core Cutadapt can only write to output files given by ``-o`` and ``-p``.
+  This implies that the following command-line arguments are not compatible with
+  multi-core:
+
+      - ``--info-file``
+      - ``--rest-file``
+      - ``--wildcard-file``
+      - ``--untrimmed-output``, ``--untrimmed-paired-output``
+      - ``--too-short-output``, ``--too-short-paired-output``
+      - ``--too-long-output``, ``--too-long-paired-output``
+
+* Multi-core is also not compatible with ``--format``
+
+* Multi-core is also not available when you use Cutadapt for demultiplexing.
+
+If you try to use multiple cores with an incompatible commandline option, you
+will get an error message.
+
+Some of these limitations will be lifted in the future, as time allows.
+
+.. versionadded:: 1.15
+
+.. versionadded:: 1.18
+    ``--cores=0`` for autodetection
+
+Speed-up tricks
+---------------
+
+There are several tricks for limiting wall-clock time while using cutadapt.
+
+``-Z`` (alternatively ``--compression-level=1``) can be used to limit the
+amount of CPU time which is spent on the compression of output files.
+Alternatively, choosing filenames not ending with ``.gz``, ``.bz2`` or ``.xz``
+will make sure no cpu time is spent on compression at all.  On systems
+with slow I/O, it can actually be faster to set a higher compression-level
+than 1.
+
+Increasing the number of cores with ``-j`` will increase the number of reads per
+minute at near-linear rate.
+
+It is also possible to use pipes in order to bypass the filesystem and pipe
+cutadapt's output into an aligner such as BWA. The ``mkfifo`` command allows
+you to create named pipes in bash.
+
+.. code-block::bash
+
+    mkfifo R1.fastq R2.fastq
+    cutadapt -a ${ADAPTER_R1} -A ${ADAPTER_R2} -o R1.fastq -p R2.fastq ${READ1} ${READ2} > cutadapt.report & \
+    bwa mem -o output.sam ${INDEX} R1.fastq R2.fastq
+
+This command will run cutadapt and BWA simultaneously, using cutadapts output as
+BWA's input, and capturing cutadapts report in ``cutadapt.report``.
+
+Read processing stages
+======================
 
 Cutadapt can do a lot more in addition to removing adapters. There are various
 command-line options that make it possible to modify and filter reads and to
 redirect them to various output files. Each read is processed in the following
-way:
+order:
 
 1. :ref:`Read modification options <modifying-reads>` are applied. This includes
-   :ref:`adapter removal <removing-adapters>`,
+   :ref:`adapter removal <adapter-types>`,
    :ref:`quality trimming <quality-trimming>`, read name modifications etc. The
    order in which they are applied is the order in which they are listed in the
    help shown by ``cutadapt --help`` under the “Additional read modifications”
@@ -127,32 +219,28 @@ way:
 3. If the read has passed all the filters, it is written to the output file.
 
 
-.. _removing-adapters:
+.. _adapter-types:
 
-Removing adapters
-=================
+Adapter types
+=============
 
-Cutadapt supports trimming of multiple types of adapters:
+Cutadapt can detect multiple adapter types. 5' adapters preceed the sequence of
+interest and 3' adapters follow it. Further distinctions are made according to
+where in the read the adapter sequence is allowed to occur.
 
-=================================================== ===========================
-Adapter type                                        Command-line option
-=================================================== ===========================
-:ref:`3' adapter <three-prime-adapters>`            ``-a ADAPTER``
-:ref:`5' adapter <five-prime-adapters>`             ``-g ADAPTER``
-:ref:`Anchored 3' adapter <anchored-3adapters>`     ``-a ADAPTER$``
-:ref:`Anchored 5' adapter <anchored-5adapters>`     ``-g ^ADAPTER``
-:ref:`5' or 3' (both possible) <anywhere-adapters>` ``-b ADAPTER``
-:ref:`Linked adapter <linked-adapters>`             ``-a ADAPTER1...ADAPTER2``
-=================================================== ===========================
-
-Here is an illustration of the allowed adapter locations relative to the read
-and depending on the adapter type:
-
-|
-
-.. image:: _static/adapters.svg
-
-|
+========================================================= =============================
+Adapter type                                              Command-line option
+========================================================= =============================
+:ref:`Regular 3' adapter <three-prime-adapters>`          ``-a ADAPTER``
+:ref:`Regular 5' adapter <five-prime-adapters>`           ``-g ADAPTER``
+:ref:`Non-internal 3' adapter <non-internal>`             ``-a ADAPTERX``
+:ref:`Non-internal 5' adapter <non-internal>`             ``-g XADAPTER``
+:ref:`Anchored 3' adapter <anchored-3adapters>`           ``-a ADAPTER$``
+:ref:`Anchored 5' adapter <anchored-5adapters>`           ``-g ^ADAPTER``
+:ref:`5' or 3' (both possible) <anywhere-adapters>`       ``-b ADAPTER``
+:ref:`Linked adapter <linked-adapters>`                   | ``-a ^ADAPTER1...ADAPTER2``
+                                                          | ``-g ADAPTER1...ADAPTER2``
+========================================================= =============================
 
 By default, all adapters :ref:`are searched error-tolerantly <error-tolerance>`.
 Adapter sequences :ref:`may also contain any IUPAC wildcard
@@ -163,73 +251,116 @@ bases <cut-bases>` from the beginning or end of each read, and to :ref:`remove
 low-quality bases (quality trimming) <quality-trimming>` from the 3' and 5' ends.
 
 
+Overview of adapter types
+-------------------------
+
+3' adapter types
+~~~~~~~~~~~~~~~~
+
+A 3' adapter is assumed to be ligated to the 3' end of your sequence of interest.
+When such an adapter is found, the adapter sequence itself and the sequence
+following it (if there is any) are trimmed. This table shows in which ways
+the different 3' adapter types are allowed to occur in a read in order to be
+recognized by the program.
+
+================================== =================== ======================== ============================= =========================
+Adapter location in read           Read layout         | Found by regular 3’    | Found by non-internal 3’    | Found by anchored 3’
+                                                       | ``-a ADAPTER``         | ``-a ADAPTERX``             | ``-a ADAPTER$``
+================================== =================== ======================== ============================= =========================
+Full adapter sequence anywhere     acgtacgtADAPTERacgt                      yes                           no                         no
+Partial adapter sequence at 3’ end acgtacgtacgtADAP                         yes                           yes                        no
+Full adapter sequence at 3’ end    acgtacgtacgtADAPTER                      yes                           yes                       yes
+================================== =================== ======================== ============================= =========================
+
+
+5' adapter types
+~~~~~~~~~~~~~~~~
+
+A 5' adapter is assumed to be ligated to the 5' end of your sequence of interest.
+When such an adapter is found, the adapter sequence itself and the sequence
+preceding it (if there is any) are trimmed. This table shows in which ways
+the different 5' adapter types are allowed to occur in a read in order to be
+recognized by the program.
+
+================================== =================== ======================== ============================= =========================
+Adapter location in read           Read layout         | Found by regular 5’    | Found by non-internal 5’    | Found by anchored 5’
+                                                       | ``-g ADAPTER``         | ``-g XADAPTER``             | ``-g ^ADAPTER``
+================================== =================== ======================== ============================= =========================
+Full adapter sequence anywhere     acgtADAPTERacgtacgt                      yes                           no                         no
+Partial adapter sequence at 5’ end PTERacgtacgtacgt                         yes                           yes                        no
+Full adapter sequence at 5’ end    ADAPTERacgtacgtacgt                      yes                           yes                       yes
+================================== =================== ======================== ============================= =========================
+
+
 .. _three-prime-adapters:
 
-3' adapters
------------
+Regular 3' adapters
+-------------------
 
 A 3' adapter is a piece of DNA ligated to the 3' end of the DNA fragment you
 are interested in. The sequencer starts the sequencing process at the 5' end of
 the fragment and sequences into the adapter if the read is long enough.
 The read that it outputs will then have a part of the adapter in the
 end. Or, if the adapter was short and the read length quite long, then the
-adapter will be somewhere within the read (followed by other bases).
+adapter will be somewhere within the read, followed by some other bases.
 
-For example, assume your fragment of interest is *MYSEQUENCE* and the adapter is
+For example, assume your fragment of interest is *mysequence* and the adapter is
 *ADAPTER*. Depending on the read length, you will get reads that look like this::
 
-    MYSEQUEN
-    MYSEQUENCEADAP
-    MYSEQUENCEADAPTER
-    MYSEQUENCEADAPTERSOMETHINGELSE
+    mysequen
+    mysequenceADAP
+    mysequenceADAPTER
+    mysequenceADAPTERsomethingelse
 
-Use cutadapt's ``-a ADAPTER`` option to remove this type of adapter. This will
+Use Cutadapt's ``-a ADAPTER`` option to remove this type of adapter. This will
 be the result::
 
-    MYSEQUEN
-    MYSEQUENCE
-    MYSEQUENCE
-    MYSEQUENCE
+    mysequen
+    mysequence
+    mysequence
+    mysequence
 
-As can be seen, cutadapt correctly deals with partial adapter matches, and also
-with any trailing sequences after the adapter. Cutadapt deals with 3' adapters
-by removing the adapter itself and any sequence that may follow. If the sequence
-starts with an adapter, like this::
+As this example shows, Cutadapt allows regular 3' adapters to occur in full
+anywhere within the read (preceeded and/or succeeded by zero or more bases), and
+also partially degraded at the 3' end. Cutadapt deals with 3' adapters
+by removing the adapter itself and any sequence that may follow. As a consequence,
+a sequence that starts with an adapter, like this, will be trimmed to an empty read::
 
-    ADAPTERSOMETHING
+    ADAPTERsomething
 
-Then the sequence will be empty after trimming. By default, empty reads are kept
-and will appear in the output.
+By default, empty reads are kept and will appear in the output. If you do not
+want this, use the ``--minimum-length``/``-m`` :ref:`filtering option <filtering>`.
 
 
 .. _five-prime-adapters:
 
-5' adapters
------------
+Regular 5' adapters
+-------------------
 
 .. note::
     Unless your adapter may also occur in a degraded form, you probably
-    want to use an anchored 5' adapter, described in the next section.
+    want to use an :ref:`anchored 5' adapter <anchored-3adapters>`.
 
 A 5' adapter is a piece of DNA ligated to the 5' end of the DNA fragment of
-interest. The adapter sequence is expected to appear at the start of the read,
-but may be partially degraded. The sequence may also appear somewhere within
-the read. In all cases, the adapter itself and the sequence preceding it is
+interest. For this type of adapter to be found, the adapter sequence needs to
+either appear in full somewhere within the read (internal match) or at the
+start (5' end) of it, where in the latter case also partial occurrences are
+allowed. In all cases, the adapter itself and the sequence preceding it is
 removed.
 
-Again, assume your fragment of interest is *MYSEQUENCE* and the adapter is
+Assume your fragment of interest is *mysequence* and the adapter is
 *ADAPTER*. The reads may look like this::
 
-    ADAPTERMYSEQUENCE
-    DAPTERMYSEQUENCE
-    TERMYSEQUENCE
-    SOMETHINGADAPTERMYSEQUENCE
+    ADAPTERmysequence
+    DAPTERmysequence
+    TERmysequence
+    somethingADAPTERmysequence
 
-All the above sequences are trimmed to ``MYSEQUENCE`` when you use `-g ADAPTER`.
+All the above sequences are trimmed to ``mysequence`` when you use `-g ADAPTER`.
 As with 3' adapters, the resulting read may have a length of zero when the
 sequence ends with the adapter. For example, the read ::
 
-    SOMETHINGADAPTER
+    somethingADAPTER
 
 will be empty after trimming.
 
@@ -244,7 +375,7 @@ adapters. You may know, for example, that degradation does not occur and that
 the adapter is also not expected to be within the read. Thus, you always expect
 the read to look like the first example from above::
 
-    ADAPTERSOMETHING
+    ADAPTERsomething
 
 If you want to trim only this type of adapter, use ``-g ^ADAPTER``. The ``^`` is
 supposed to indicate the the adapter is "anchored" at the beginning of the read.
@@ -257,11 +388,11 @@ cases like these are also recognized::
 
 The read will simply be empty after trimming.
 
-Be aware that cutadapt still searches for adapters error-tolerantly and, in
+Be aware that Cutadapt still searches for adapters error-tolerantly and, in
 particular, allows insertions. So if your maximum error rate is sufficiently
 high, even this read will be trimmed::
 
-    BADAPTERSOMETHING
+    BADAPTERsomething
 
 The ``B`` in the beginning is seen as an insertion. If you also want to prevent
 this from happening, use the option ``--no-indels`` to disallow insertions and
@@ -286,18 +417,55 @@ appropriate anchored 5' adapter.
 
 As an example, assume you have these reads::
 
-    MYSEQUENCEADAP
-    MYSEQUENCEADAPTER
-    MYSEQUENCEADAPTERSOMETHINGELSE
+    mysequenceADAP
+    mysequenceADAPTER
+    mysequenceADAPTERsomethingelse
 
 Using ``-a ADAPTER$`` will result in::
 
-    MYSEQUENCEADAP
-    MYSEQUENCE
-    MYSEQUENCEADAPTERSOMETHINGELSE
+    mysequenceADAP
+    mysequence
+    mysequenceADAPTERsomethingelse
 
 That is, only the middle read is trimmed at all.
 
+
+.. _non-internal:
+
+Non-internal 5' and 3' adapters
+-------------------------------
+
+The non-internal 5' and 3' adapter types disallow internal occurrences of the
+adapter sequence. This is like a less strict version of anchoring: The
+adapter must always be at one of the ends of the read, but - unlike anchored
+adapters - partial occurrences are also ok.
+
+Use ``-a ADAPTERX`` (replace ``ADAPTER`` with your actual adapter sequence, but
+use a literal ``X``) to disallow internal matches for a 3' adapter. Use
+``-g XADAPTER`` to disallow them for a 5' adapter.
+Mnemonic: The ``X`` is not allowed to “shift into” the read.
+
+Here are some examples for trimming reads with ``-a ADAPTERX``:
+
+================================== ==================================
+Input read                         Processed read
+================================== ==================================
+``mysequenceADAP``                 ``mysequence``
+``mysequenceADAPTER``              ``mysequence``
+``mysequenceADAPTERsomethingelse`` ``mysequenceADAPTERsomethingelse``
+================================== ==================================
+
+Here are some examples for trimming reads with ``-g XADAPTER``:
+
+================================== ===================================
+Input read                         Processed read
+================================== ===================================
+``APTERmysequence``                ``mysequence``
+``ADAPTERmysequence``              ``mysequence``
+``somethingelseADAPTERmysequence`` ``somethingelseADAPTERmysequence``
+================================== ===================================
+
+.. versionadded:: 1.17
 
 .. _linked-adapters:
 
@@ -306,70 +474,96 @@ Linked adapters (combined 5' and 3' adapter)
 
 If your sequence of interest ist “framed” by a 5' and a 3' adapter, and you want
 to remove both adapters, then you may want to use a *linked adapter*. A linked
-adapter combines an anchored 5' adapter and a 3' adapter. The 3' adapter can be
-regular or anchored. The idea is that a read is only trimmed if the anchored
-adapters occur. Thus, the 5' adapter is always required, and if the 3' adapter
-was specified as anchored, it also must exist for a successful match.
+adapter combines a 5' and a 3' adapter. By default, the adapters are not anchored,
+but in many cases, you should anchor the 5’ adapter by prefixing it with ``^``.
 
 :ref:`See the previous sections <anchored-5adapters>` for what anchoring means.
 
-Use ``-a ADAPTER1...ADAPTER2`` to search for a linked adapter. ADAPTER1 is
-always interpreted as an anchored 5' adapter. Here, ADAPTER2 is a
-regular 3' adapter. If you write ``-a ADAPTER1...ADAPTER2$`` instead,
-then the 3' adapter also becomes anchored, that is, for a read to be
-trimmed, both adapters must exist at the respective ends.
+.. note::
+   Cutadapt versions before 2.0 anchored the 5’ adapter within linked adapters
+   automatically even if the initial ``^`` was not specified. If you have scripts
+   written for Cutadapt versions earlier than 2.0, please add the ``^`` so that
+   the behavior does not change!
 
-Note that the ADAPTER1 is always interpreted as an anchored 5' adapter even though
-there is no ``^`` character in the beginning.
+Linked adapters are specified as two sequences separated by ``...`` (three dots)::
 
-In summary:
+    cutadapt -a ^ADAPTER1...ADAPTER2 -o out.fastq.gz in.fastq.gz
 
-* ``-a ADAPTER1...ADAPTER2``: The 5' adapter is removed if it occurs. If a 3' adapter
-  occurs, it is removed only when also a 5' adapter is present.
-* ``-a ADAPTER1...ADAPTER2$``: The adapters are removed only if both occur.
+If you anchor an adapter, it will also become marked as being *required*. If a
+required adapter cannot be found, the read will not be trimmed at all even if
+the other adapter occurs. If an adapter is not required, it is *optional*.
 
-As an  example, assume the 5' adapter is *FIRST* and the 3' adapter is *SECOND*
+Also, when you use the ``--discard-untrimmed`` option (or ``--trimmed-only``) with a
+linked adapter, then a read is considered to be trimmed only if all required adapters
+were found.
+
+In the previous example, ``ADAPTER1`` was anchored and therefore required, but ``ADAPTER2``
+was optional. Anchoring also ``ADAPTER2`` (and making it required as well) would look like this::
+
+    cutadapt -a ^ADAPTER1...ADAPTER2$ -o out.fastq.gz in.fastq.gz
+
+As an example, assume the 5' adapter is *FIRST*, the 3' adapter is *SECOND*
 and you have these input reads::
 
-    FIRSTMYSEQUENCESECONDEXTRABASES
-    FIRSTMYSEQUENCESEC
-    FIRSTMYSEQUE
-    ANOTHERREADSECOND
+    FIRSTmysequenceSECONDextrabases
+    FIRSTmysequenceSEC
+    FIRSTmyseque
+    anotherreadSECOND
 
 Trimming with ::
 
-    cutadapt -a FIRST...SECOND input.fastq > output.fastq
+    cutadapt -a ^FIRST...SECOND -o output.fastq input.fastq
 
 will result in ::
 
-    MYSEQUENCE
-    MYSEQUENCE
-    MYSEQUE
-    ANOTHERREADSECOND
+    mysequence
+    mysequence
+    myseque
+    anotherreadSECOND
 
-The 3' adapter in the last read is not trimmed because the read does not contain
-the 5' adapter.
+The 3' adapter in the last read is not trimmed because the anchored 5’ adapter is required, but
+missing in the read.
 
-This feature does not work when used in combination with some other options,
-such as ``--info-file``, ``--mask-adapter``.
+Linked adapters do not work when used in combination with ``--info-file`` and ``--mask-adapter``.
 
 .. versionadded:: 1.10
 
 .. versionadded:: 1.13
    Ability to anchor the 3' adapter.
 
+.. versionadded:: 2.0
+   The 5’ adapter is no longer anchored by default.
 
-Linked adapters without anchoring
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Sometimes, the 5' adapter of a linked adapter pair should not be anchored. It is possible to
-specify linked adapters also with ``-g ADAPTER1...ADAPTER2`` (note that ``-g`` is used instead
-of ``-a``). These work just like the linked adapters described in the previous section,
-*except that the 5' adapter is not anchored by default*.
+.. _linked-override:
 
-This feature has been added on a tentative basis. It may change in the next program version.
+Changing which adapters are required
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+As described, when you specify a linked adapter with ``-a``, the adapters that are anchored
+become *required*, and the non-anchored adapters become *optional*. To change this, you can
+instead use ``-g`` to specify a linked adapter. In that case, *both* adapters are required
+(even if they are not anchored). This type of linked adapter type is especially suited for
+trimming CRISR screening reads. For example::
+
+    cutadapt -g ADAPTER1...ADAPTER2 -o out.fastq.gz in.fastq.gz
+
+Here, both ``ADAPTER1`` and ``ADAPTER2`` are not anchored, but they are required because ``-g``
+was used.
+
+The ``-g`` option does not cover all cases, so you can also mark each adapter explicitly as
+required or optional using the :ref:`trimming parameters <trimming-parameters>`
+``required`` and ``optional``. This is the only way to make an anchored adapter optional.
+For example, to request that an anchored 5' adapter (here ``ADAPTER1``) should not be required,
+you can specify it like this ::
+
+    cutadapt -a "^ADAPTER1;optional...ADAPTER2" -o output.fastq.gz input.fastq.gz
 
 .. versionadded:: 1.13
+    Option ``-g`` added.
+
+.. versionchanged:: 1.15
+    Option ``-g`` requires both adapters.
 
 
 Linked adapter statistics
@@ -419,66 +613,6 @@ Read before trimming           Read after trimming Detected adapter type
 ``TERMYSEQUENCE``              ``MYSEQUENCE``      5' adapter
 ============================== =================== =====================
 
-The ``-b`` option cannot be used with colorspace data.
-
-
-.. _error-tolerance:
-
-Error tolerance
----------------
-
-All searches for adapter sequences are error tolerant. Allowed errors are
-mismatches, insertions and deletions. For example, if you search for the
-adapter sequence ``ADAPTER`` and the error tolerance is set appropriately
-(as explained below), then also ``ADABTER`` will be found (with 1 mismatch),
-as well as ``ADAPTR`` (with 1 deletion), and also ``ADAPPTER`` (with 1
-insertion).
-
-The level of error tolerance is adjusted by specifying a *maximum error rate*,
-which is 0.1 (=10%) by default. Use the ``-e`` option to set a different value.
-To determine the number of allowed errors, the maximum error rate is multiplied
-by the length of the match (and then rounded off).
-
-What does that mean?
-Assume you have a long adapter ``LONGADAPTER`` and it appears in full somewhere
-within the read. The length of the match is 11 characters since the full adapter
-has a length of 11, therefore 11·0.1=1.1 errors are allowed with the default
-maximum error rate of 0.1. This is rounded off to 1 allowed error. So the
-adapter will be found within this read::
-
-    SEQUENCELONGADUPTERSOMETHING
-
-If the match is a bit shorter, however, the result is different::
-
-    SEQUENCELONGADUPT
-
-Only 9 characters of the adapter match: ``LONGADAPT`` matches ``LONGADUPT``
-with one substitution. Therefore, only 9·0.1=0.9 errors are allowed. Since this
-is rounded off to zero allowed errors, the adapter will not be found.
-
-The number of errors allowed for a given adapter match length is also shown in
-the report that cutadapt prints::
-
-    Sequence: 'LONGADAPTER'; Length: 11; Trimmed: 2 times.
-
-    No. of allowed errors:
-    0-9 bp: 0; 10-11 bp: 1
-
-This tells us what we now already know: For match lengths of 0-9 bases, zero
-errors are allowed and for matches of length 10-11 bases, one error is allowed.
-
-The reason for this behavior is to ensure that short matches are not favored
-unfairly. For example, assume the adapter has 40 bases and the maximum error
-rate is 0.1, which means that four errors are allowed for full-length matches.
-If four errors were allowed even for a short match such as one with 10 bases, this would
-mean that the error rate for such a case is 40%, which is clearly not what was
-desired.
-
-Insertions and deletions can be disallowed by using the option
-``--no-indels``.
-
-See also the :ref:`section on details of the alignment algorithm <algorithm>`.
-
 
 Multiple adapter occurrences within a single read
 -------------------------------------------------
@@ -501,22 +635,157 @@ The above applies when both occurrences of the adapter are *exact* matches, and
 it also applies when both occurrences of the adapter are *inexact* matches (that
 is, it has at least one indel or mismatch). However, if one match is exact, but
 the other is inexact, then the exact match wins, even if it is not the leftmost
-one! The reason for this behavior is that cutadapt searches for exact matches
+one! The reason for this behavior is that Cutadapt searches for exact matches
 first and, to improve performance, skips the error-tolerant matching step if an
 exact match was found.
 
 
-Reducing random matches
------------------------
+.. _trimming-parameters:
 
-Since cutadapt allows partial matches between the read and the adapter sequence,
+Adapter-trimming parameters
+===========================
+
+The adapter-trimming algorithm has a few parameters specific to each adapter
+that steer how the adapter sequence is found. The command-line options ``-e``
+and ``-O`` set the maximum error rate and minimum overlap parameters (see
+details in the following sections) for all
+adapters listed via the ``-a``/``-b``/``-g`` etc. options. When trimming more
+than one adapter, it may be necessary to change parameters for each
+adapter individually. You can do so by adding a semicolon and ``parameter=value`` to the end
+of the adapter sequence, as in ``-a "ADAPTER;max_error_rate=0.2"``.
+Multiple parameters can also be set, as in ``-a "ADAPTER;max_error_rate=0.2;min_overlap=5"``.
+Remember to add the quotation marks; otherwise the shell will interpret the semicolon as a
+separator between two commands.
+
+The following parameters are supported at the moment:
+
+================================================== ============= ================================
+Parameter                                          Global option Adapter-specific parameter
+================================================== ============= ================================
+Maximum error rate                                 ``-e 0.2``    | ``ADAPTER;e=0.2`` or
+                                                                 | ``ADAPTER;max_error_rate=0.2``
+
+Minimum overlap                                    ``-O 5``      | ``ADAPTER;o=5`` or
+                                                                 | ``ADAPTER;min_overlap=5``
+
+Allow matches anywhere                                           ``ADAPTER;anywhere``
+
+:ref:`Linked adapter required <linked-override>`                 ``ADAPTER;required``
+:ref:`Linked adapter optional <linked-override>`                 ``ADAPTER;optional``
+================================================== ============= ================================
+
+Adapter-specific parameters override the global option.
+
+.. versionadded: 1.18
+    Syntax for setting adapter-specific parameters
+
+.. _error-tolerance:
+
+Error tolerance
+---------------
+
+All searches for adapter sequences are error tolerant. Allowed errors are
+mismatches, insertions and deletions. For example, if you search for the
+adapter sequence ``ADAPTER`` and the error tolerance is set appropriately
+(as explained below), then also ``ADABTER`` will be found (with 1 mismatch),
+as well as ``ADAPTR`` (with 1 deletion), and also ``ADAPPTER`` (with 1
+insertion).
+
+The level of error tolerance is adjusted by specifying a *maximum error rate*,
+which is 0.1 (=10%) by default. Use the ``-e`` option to set a different value
+globally or the ``max_error_rate`` adapter-specific parameter to change it for
+a single adapter only. Example: ``-a "ADAPTER;max_error_rate=0.15"``
+(the quotation marks are necessary).
+
+To determine the number of allowed errors, the maximum error rate is multiplied
+by the length of the match and then rounded off.
+What does that mean?
+Assume you have a long adapter ``LONGADAPTER`` and it appears in full somewhere
+within the read. The length of the match is 11 characters since the full adapter
+has a length of 11, therefore 11·0.1=1.1 errors are allowed with the default
+maximum error rate of 0.1. This is rounded off to 1 allowed error. So the
+adapter will be found within this read::
+
+    sequenceLONGADUPTERsomething
+
+If the match is a bit shorter, however, the result is different::
+
+    sequenceLONGADUPT
+
+Only the first 9 characters of the adapter match a part of the read:
+``LONGADAPT`` is matched to ``LONGADUPT``. So the length of the match
+is 9 and therefore, only 9·0.1=0.9 errors are allowed. This is then
+rounded off to zero, which means that the adapter will not be found
+as there is actually one substitution.
+
+The number of errors allowed for a given adapter match length is also shown in
+the report that Cutadapt prints::
+
+    Sequence: 'LONGADAPTER'; Length: 11; Trimmed: 2 times.
+
+    No. of allowed errors:
+    0-9 bp: 0; 10-11 bp: 1
+
+This tells us what we now already know: For match lengths of 0-9 bases, zero
+errors are allowed and for matches of length 10-11 bases, one error is allowed.
+
+The reason for this behavior is to ensure that short matches are not favored
+unfairly. For example, assume the adapter has 40 bases and the maximum error
+rate is 0.1, which means that four errors are allowed for full-length matches.
+If four errors were allowed even for a short match such as one with 10 bases, this would
+mean that the error rate for such a case is 40%, which is clearly not what was
+desired.
+
+Insertions and deletions can be disallowed by using the option
+``--no-indels``.
+
+See also the :ref:`section on details of the alignment algorithm <adapter-alignment-algorithm>`.
+
+
+N wildcard characters
+~~~~~~~~~~~~~~~~~~~~~
+
+Any ``N`` wildcard characters in the adapter sequence are skipped when
+computing the error rate. That is, they do not contribute to the length of
+a match. For example, the adapter sequence ``ACGTACNNNNNNNNGTACGT`` has a length
+of 20, but only 12 non-``N``-characters. At a maximum error rate of 0.1, only
+one error is allowed if this sequence is found in full in a read because
+12·0.1=1.2, which is 1 when rounded down.
+
+This is done because ``N`` bases cannot contribute to the number of errors.
+In previous versions, ``N`` wildcard characters did contribute to the match
+length, but this artificially inflates the number of allowed errors. For example,
+an adapter like ``N{18}CC`` (18 ``N`` wildcards followed by ``CC``) would
+effectively match anywhere because the default error rate of 0.1 would allow for
+two errors, but there are only two non-``N`` bases in the particular adapter.
+
+However, even in previous versions, the location with the greatest number of
+matching bases is chosen as the best location for an adapter, so in many cases
+the adapter would still be placed properly.
+
+.. versionadded: 2.0
+    Ignore ``N`` wildcards when computing the error rate.
+
+
+.. _random-matches:
+
+Minimum overlap (reducing random matches)
+-----------------------------------------
+
+Since Cutadapt allows partial matches between the read and the adapter sequence,
 short matches can occur by chance, leading to erroneously trimmed bases. For
 example, roughly 25% of all reads end with a base that is identical to the
 first base of the adapter. To reduce the number of falsely trimmed bases,
-the alignment algorithm requires that at least *three bases* match between
-adapter and read. The minimum overlap length can be changed with the parameter
-``--overlap`` (or its short version ``-O``). Shorter matches are simply
-ignored, and the bases are not trimmed.
+the alignment algorithm requires that, by default, at least *three bases* match between
+adapter and read.
+
+This minimum overlap length can be changed globally (for all adapters) with the parameter
+``--overlap`` (or its short version ``-O``). Alternatively, use the adapter-specific
+parameter ``min_overlap`` to change it for a single adapter only. Example:
+``-a "ADAPTER;min_overlap=5"`` (the quotation marks are necessary).
+
+If a read contains a partial adapter sequence shorter than the minimum overlap length,
+no match will be found (and therefore no bases are trimmed).
 
 Requiring at least three bases to match is quite conservative. Even if no
 minimum overlap was required, we can compute that we lose only about 0.44 bases
@@ -526,8 +795,35 @@ overlap length of 3, only about 0.07 bases are lost per read.
 
 When choosing an appropriate minimum overlap length, take into account that
 true adapter matches are also lost when the overlap length is higher than
-zero, reducing cutadapt's sensitivity.
+zero, reducing Cutadapt's sensitivity.
 
+
+Allowing partial matches at both ends
+-------------------------------------
+
+The regular 5' and 3' adapter types allow partial adapter occurrences only
+at the 5' and 3' end, respectively. To allow partial matches at both ends,
+you can use the ``anywhere`` adapter-specific parameter.
+
+A 3' adapter specified via ``-a ADAPTER`` will be found even
+when it occurs partially at the 3' end, as in ``mysequenceADAPT``. However,
+it will by default not be found if it occurs partially at the 5' end, as in
+``APTERmysequence``. To find the adapter in both cases, specify
+the adapter as ``-a "ADAPTER;anywhere"``.
+
+Similarly, for a 5' adapter specified via ``-g ADAPTER``, partial matches at
+the 3' end are not found, as in ``mysequenceADAPT``. To allow partial matches
+at both ends, use ``-g "ADAPTER;anywhere"``.
+
+.. note::
+    With ``anywhere``, partial matches at the end that is usually not allowed
+    to be matched will result in empty reads! This means that short random
+    matches have a much greater detrimental effect and you should
+    :ref:`increase the minimum overlap length <random-matches>`.
+
+
+Specifying adapter sequences
+============================
 
 .. _wildcards:
 
@@ -542,23 +838,24 @@ useful for trimming adapters with an embedded variable barcode::
 
     cutadapt -a ACGTAANNNNTTAGC -o output.fastq input.fastq
 
-Wildcard characters in the adapter are enabled by default. Use the option ``-N``
-to disable this.
+Even the ``X`` wildcard that does not match any nucleotide is supported. If
+used as in ``-a ADAPTERX`` or ``-g XADAPTER``, it acquires a special meaning for
+:ref:`and disallows internal adapter matches <non-internal>`.
 
-Matching of wildcards in the reads is also possible, but disabled by default
-in order to avoid matches in reads that consist of many (often low-quality)
-``N`` bases. Use ``--match-read-wildcards`` to enable wildcards also in reads.
+Wildcard characters are by default only allowed in adapter sequences and
+are not recognized when they occur in a read. This is to avoid matches in reads
+that consist of many (often low-quality) ``N`` bases. Use
+``--match-read-wildcards`` to enable wildcards also in reads.
 
-If wildcards are disabled entirely (that is, you use ``-N`` and *do not* use
-``--match-read-wildcards``), then cutadapt compares characters by ASCII value.
-Thus, both the read and adapter can be arbitrary strings (such as ``SEQUENCE``
-or ``ADAPTER`` as used here in the examples).
+Use the option ``-N`` to disable interpretation of wildcard characters even in
+the adapters. If wildcards are disabled entirely, that is, when you use ``-N``
+and *do not* use ``--match-read-wildcards``, then Cutadapt compares characters
+by their ASCII value. Thus, both the read and adapter can be arbitrary strings
+(such as ``SEQUENCE`` or ``ADAPTER`` as used here in the examples).
 
-Wildcards do not work in colorspace.
 
-
-Repeated bases in the adapter sequence
---------------------------------------
+Repeated bases
+--------------
 
 If you have many repeated bases in the adapter sequence, such as many ``N`` s or
 many ``A`` s, you do not have to spell them out. For example, instead of writing
@@ -579,6 +876,28 @@ Modifying reads
 
 This section describes in which ways reads can be modified other than adapter
 removal.
+
+
+Not trimming adapters
+---------------------
+
+Instead of removing an adapter from a read, it is also possible to take other
+actions when an adapter is found by specifying the ``--action`` option.
+
+The default is ``--action=trim``, which will remove the adapter and either
+the sequence before or after it from the read.
+
+Use ``--action=none`` to not remove the adapter from the read. This is useful
+when combined with other options, such as ``--untrimmed-output``, which
+will redirect the reads without adapter to a different file. Other read
+modification options (as listed below) may still change the read.
+
+Use ``--action=mask`` to write ``N`` characters to that parts of the read
+that would otherwise have been removed .
+
+Use ``--action=lowercase`` to change to lowercase that part of the read that would otherwise
+have been removed. The rest is converted to uppercase.
+
 
 .. _cut-bases:
 
@@ -626,6 +945,9 @@ The 5' end will then be trimmed with a cutoff of 15, and the 3' end will be
 trimmed with a cutoff of 10. If you only want to trim the 5' end, then use a
 cutoff of 0 for the 3' end, as in ``-q 10,0``.
 
+A :ref:`description of the quality-trimming algorithm is also
+available <quality-trimming-algorithm>`. The algorithm is the same as used by BWA.
+
 
 .. _nextseq-trim:
 
@@ -651,48 +973,15 @@ instead), except that the qualities of ``G`` bases are ignored.
 .. versionadded:: 1.10
 
 
-Quality trimming algorithm
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The trimming algorithm is the same as the one used by BWA, but applied to both
-ends of the read in turn (if requested). That is: Subtract the given cutoff
-from all qualities; compute partial sums from all indices to the end of the
-sequence; cut the sequence at the index at which the sum is minimal. If both
-ends are to be trimmed, repeat this for the other end.
-
-The basic idea is to remove all bases starting from the end of the read whose
-quality is smaller than the given threshold. This is refined a bit by allowing
-some good-quality bases among the bad-quality ones. In the following example,
-we assume that the 3' end is to be quality-trimmed.
-
-Assume you use a threshold of 10 and have these quality values:
-
-42, 40, 26, 27, 8, 7, 11, 4, 2, 3
-
-Subtracting the threshold gives:
-
-32, 30, 16, 17, -2, -3, 1, -6, -8, -7
-
-Then sum up the numbers, starting from the end (partial sums). Stop early if
-the sum is greater than zero:
-
-(70), (38), 8, -8, -25, -23, -20, -21, -15, -7
-
-The numbers in parentheses are not computed (because 8 is greater than zero),
-but shown here for completeness. The position of the minimum (-25) is used as
-the trimming position. Therefore, the read is trimmed to the first four bases,
-which have quality values 42, 40, 26, 27.
-
-
 Shortening reads to a fixed length
 ----------------------------------
 
 To shorten each read down to a certain length, use the ``--length`` option or
 the short version ``-l``::
 
-    cutadapt -l 10 input.fastq > output.fastq
+    cutadapt -l 10 -o output.fastq.gz input.fastq.gz
 
-This shortens all reads from ``input.fastq`` down to 10 bases. The removed bases
+This shortens all reads from ``input.fastq.gz`` down to 10 bases. The removed bases
 are those on the 3' end.
 
 If you want to remove a fixed number of bases from each read, use
@@ -746,11 +1035,7 @@ each read. Steps not requested on the command-line are skipped.
 6. Length tag modification (``--length-tag``)
 7. Read name suffix removal (``--strip-suffix``)
 8. Addition of prefix and suffix to read name (``-x``/``--prefix`` and ``-y``/``--suffix``)
-9. Double-encode the sequence (only colorspace)
-10. Replace negative quality values with zero (zero capping, only colorspace)
-11. Trim primer base (only colorspace)
-
-The last three steps are colorspace-specific.
+9. Replace negative quality values with zero (zero capping)
 
 
 .. _filtering:
@@ -773,18 +1058,21 @@ modifications have been applied (adapter removal, quality trimming etc.). A
 processed read can be identical to the input read if no modifications were done.
 
 
-``--minimum-length N`` or ``-m N``
-    Throw away processed reads shorter than *N* bases.
+``--minimum-length LENGTH`` or ``-m LENGTH``
+    Discard processed reads that are shorter than LENGTH. Reads that are too
+    short even before adapter removal are also discarded. Without this option,
+    reads that have a length of zero (empty reads) are kept in the output.
 
 ``--too-short-output FILE``
-    Instead of throwing away the reads that are too short according to ``-m``,
+    Instead of discarding the reads that are too short according to ``-m``,
     write them to *FILE* (in FASTA/FASTQ format).
 
-``--maximum-length N`` or ``-M N``
-    Throw away processed reads longer than *N* bases.
+``--maximum-length LENGTH`` or ``-M LENGTH``
+    Discard processed reads that are longer than LENGTH. Reads that are too
+    long even before adapter removal are also discarded.
 
 ``--too-long-output FILE``
-    Instead of throwing away the reads that are too long (according to ``-M``),
+    Instead of discarding reads that are too long (according to ``-M``),
     write them to *FILE* (in FASTA/FASTQ format).
 
 ``--untrimmed-output FILE``
@@ -792,10 +1080,10 @@ processed read can be identical to the input read if no modifications were done.
     of writing them to the regular output file.
 
 ``--discard-trimmed``
-   Throw away reads in which an adapter was found.
+   Discard reads in which an adapter was found.
 
 ``--discard-untrimmed``
-   Throw away reads in which *no* adapter was found. This has the same effect as
+   Discard reads in which *no* adapter was found. This has the same effect as
    specifying ``--untrimmed-output /dev/null``.
 
 The options ``--too-short-output`` and ``--too-long-output`` are applied first.
@@ -806,86 +1094,81 @@ whether it was trimmed or not.
 The options ``--untrimmed-output``, ``--discard-trimmed`` and ``-discard-untrimmed``
 are mutually exclusive.
 
+The following filtering options do not have a corresponding option for redirecting
+reads. They always discard reads for which the filtering criterion applies.
+
+``--max-n COUNT_or_FRACTION``
+    Discard reads with more than COUNT ``N`` bases. If ``COUNT_or_FRACTION`` is an
+    number between 0 and 1, it is interpreted as a fraction of the read length
+
+``--discard-casava``
+    Discard reads that did not pass CASAVA filtering. Illumina’s CASAVA pipeline in
+    version 1.8 adds an *is_filtered* header field to each read. Specifying this
+    option, the reads that did not pass filtering (these are the reads that have
+    a ``Y`` for *is_filtered*) will be discarded. Reads for which the header cannot
+    be recognized are kept.
+
 
 .. _paired-end:
 
 Trimming paired-end reads
 =========================
 
-Cutadapt supports trimming of paired-end reads, trimming both reads in a pair
-at the same time.
-
-Assume the input is in ``reads.1.fastq`` and ``reads.2.fastq`` and that
-``ADAPTER_FWD`` should be trimmed from the forward reads (first file)
-and ``ADAPTER_REV`` from the reverse reads (second file).
-
-The basic command-line is::
+Cutadapt supports trimming of paired-end reads. To enable this, provide two
+input files and a second output file with the ``-p`` option (this is the short
+form of ``--paired-output``). This is the basic command line syntax::
 
     cutadapt -a ADAPTER_FWD -A ADAPTER_REV -o out.1.fastq -p out.2.fastq reads.1.fastq reads.2.fastq
 
-``-p`` is the short form of ``--paired-output``. The option ``-A`` is used here
-to specify an adapter sequence that cutadapt
-should remove from the second read in each pair. There are also the options
-``-G``, ``-B``. All of them work just like their lowercase counterparts,
-except that the adapter is searched for in the second read in each paired-end
-read. There is also option ``-U``, which you can use to remove a fixed number
-of bases from the second read in a pair.
+Here, the input reads are in ``reads.1.fastq`` and ``reads.2.fastq``, and the
+result will be written to ``out.1.fastq`` and ``out.2.fastq``.
 
-While it is possible to run cutadapt on the two files separately, processing
-both files at the same time is highly recommended since the program can check
-for problems in your input files only when they are processed together.
+In paired-end mode, the options ``-a``, ``-b``, ``-g`` and ``-u`` that also
+exist in single-end mode are applied to the forward reads only. To modify
+the reverse read, these options have uppercase versions ``-A``, ``-B``,
+``-G`` and ``-U`` that work just like their counterparts.
+In the example above, ``ADAPTER_FWD`` will therefore be trimmed from the
+forward reads and ``ADAPTER_REV`` from the reverse reads.
 
-When you use ``-p``/``--paired-output``, cutadapt checks whether the files are
+====================== ===========================
+Single-end/R1 option   Corresponding option for R2
+====================== ===========================
+``--adapter``, ``-a``  ``-A``
+``--front``, ``-g``    ``-G``
+``--anywhere``, ``-b`` ``-B``
+``--cut``, ``-u``      ``-U``
+``--output``, ``-o``   ``--paired-output``, ``-p``
+====================== ===========================
+
+In paired-end mode, Cutadapt checks whether the input files are
 properly paired. An error is raised if one of the files contains more reads than
-the other or if the read names in the two files do not match. Only the part of
-the read name before the first space is considered. If the read name ends with
-``/1`` or ``/2``, then that is also ignored. For example, two FASTQ headers that
-would be considered to denote properly paired reads are::
+the other or if the read names in the two files do not match. The read name
+comparison ignores a trailing ``/1`` or ``/2`` to allow processing some old
+Illumina paired-end files.
 
-    @my_read/1 a comment
+In some cases, it works to run Cutadapt twice in single-end mode on the input
+files, but we recommend against it as this skips the consistency checks that
+Cutadapt can do otherwise.
 
-and::
-
-    @my_read/2 another comment
-
-This is an example for *improperly paired* read names::
-
-    @my_read/1;1
-
-and::
-
-    @my_read/2;1
-
-Since the ``/1`` and ``/2`` are ignored only if the occur at the end of the read
-name, and since the ``;1`` is considered to be part of the read name, these
-reads will not be considered to be propely paired.
-
-As soon as you start to use one of the filtering options that discard reads, it
-is mandatory you process both files at the same time to make sure that the
-output files are kept synchronized: If a read is removed from one of the files,
-cutadapt will ensure it is also removed from the other file.
-
+Also, as soon as you start to use one of the filtering options that discard
+reads, it is mandatory you process both files at the same time to make sure that the
+output files are kept synchronized. If a read is removed from one of the files,
+Cutadapt will always ensure that it is also removed from the other file.
 
 The following command-line options are applied to *both* reads:
 
 * ``-q`` (along with ``--quality-base``)
 * ``--times`` applies to all the adapters given
-* ``--no-trim``
 * ``--trim-n``
-* ``--mask``
+* ``--action``
 * ``--length``
 * ``--length-tag``
 * ``--prefix``, ``--suffix``
-* ``--strip-f3``
-* ``--colorspace``, ``--bwa``, ``-z``, ``--no-zero-cap``, ``--double-encode``,
-  ``--trim-primer``
 
 The following limitations still exist:
 
 * The ``--info-file``, ``--rest-file`` and ``--wildcard-file`` options write out
   information only from the first read.
-* Demultiplexing is not yet supported with paired-end data.
-
 
 
 .. _filtering-paired:
@@ -894,30 +1177,69 @@ Filtering paired-end reads
 --------------------------
 
 The :ref:`filtering options listed above <filtering>` can also be used when
-trimming paired-end data. Since there are two reads, however, the filtering
-criteria are checked for both reads. The question is what to do when a criterion
-applies to only one read and not the other.
+trimming paired-end data.
 
-By default, the filtering options discard or redirect the read pair if *any*
-of the two reads fulfill the criteria. That is, ``--max-n`` discards the pair
-if one of the two reads has too many ``N`` bases; ``--discard-untrimmed``
-discards the pair if one of the reads does not contain an adapter;
-``--minimum-length`` discards the pair if one of the reads is too short;
-and ``--maximum-length`` discards the pair if one of the reads is too long.
-Note that the ``--discard-trimmed`` filter would also apply because it is also
-the case that at least one of the reads is *trimmed*!
+Importantly, Cutadapt *always discards both reads of a pair* if it determines
+that the pair should be discarded. This ensures that the reads in the output
+files are in sync. (If you don’t want or need this, you can run Cutadapt
+separately on the R1 and R2 files.)
+
+The same applies also to the options that redirect reads to other files if they
+fulfill a filtering criterion, such as
+``--too-short-output``/``--too-short-paired-output``. That is, the reads are
+always sent in pairs to these alternative output files.
+
+The ``--pair-filter`` option determines how to combine the filters for
+R1 and R2 into a single decision about the read pair.
+
+The default is ``--pair-filter=any``, which means that a read pair is discarded
+(or redirected) if *one of* the reads (R1 or R2) fulfills the filtering criterion.
+As an example, if option ``--minimum-length=20`` is used and paired-end data is
+processed, a read pair if discarded if one of the reads is shorter than 20 nt.
 
 To require that filtering criteria must apply to *both* reads in order for a
-read pair to be considered "filtered", use the option ``--pair-filter=both``.
+read pair to be discarded, use the option ``--pair-filter=both``.
 
-To further complicate matters, cutadapt switches to a backwards compatibility
-mode ("legacy mode") when none of the uppercase modification options
-(``-A``/``-B``/``-G``/``-U``) are given. In that mode, filtering criteria are
-checked only for the *first* read. Cutadapt will also tell you at the top of
-the report whether legacy mode is active. Check that line if you get strange
-results!
+If you want the filter to ignore the second read, use ``--pair-filter=first``.
+
+The following table describes the effect for some filtering options.
+
++----------------------------+------------------------------------------------+-----------------------------------------+
+| Filtering option           | With ``--pair-filter=any``, the pair           | With ``-pair-filter=both``, the pair    |
+|                            | is discarded if ...                            | is discarded if ...                     |
++============================+================================================+=========================================+
+| ``--minimum-length``       | one of the reads is too short                  | both reads are too short                |
++----------------------------+------------------------------------------------+-----------------------------------------+
+| ``--maximum-length``       | one of the reads is too long                   | both reads are too long                 |
++----------------------------+------------------------------------------------+-----------------------------------------+
+| ``--discard-trimmed``      | one of the reads contains an adapter           | both reads contain an adapter           |
++----------------------------+------------------------------------------------+-----------------------------------------+
+| ``--discard-untrimmed``    | one of the reads does not contain an adapter   | both reads do not contain an adapter    |
++----------------------------+------------------------------------------------+-----------------------------------------+
+| ``--max-n``                | one of the reads contains too many ``N`` bases | both reads contain too many ``N`` bases |
++----------------------------+------------------------------------------------+-----------------------------------------+
+
+.. note::
+
+    As an exception, when you specify adapters *only* for R1 (``-a``/``-g``/``-b``) or *only* for
+    R2 (``-A``/``-G``/``-B``), then the ``--pair-filter`` mode for ``--discard-untrimmed`` is
+    forced to be ``both`` (and accordingly, also for the ``--untrimmed-(paired-)output`` options).
+
+    Otherwise, with the default ``--pair-filter=any`` setting, all pairs would be considered
+    untrimmed because it would always be the case that one of the reads in the pair does not contain
+    an adapter.
 
 These are the paired-end specific filtering and output options:
+
+``--minimum-length LENGTH1:LENGTH2`` or ``-m LENGTH1:LENGTH2``
+    When trimming paired-end reads, the minimum lengths for R1 and R2 can be specified
+    separately by separating them with a colon (``:``). If the colon syntax is not used,
+    the same minimum length applies to both reads, as discussed above. Also, one of the
+    values can be omitted to impose no restrictions. For example, with ``-m 17:``,
+    the length of R1 must be at least 17, but the length of R2 is ignored.
+
+``--maximum-length LENGTH1:LENGTH2`` or ``-M LENGTH1:LENGTH2``
+    Maximum lengths can also be specified separately, see the explanation of ``-m`` above.
 
 ``--paired-output FILE`` or ``-p FILE``
     Write the second read of each processed pair to *FILE* (in FASTA/FASTQ
@@ -927,14 +1249,78 @@ These are the paired-end specific filtering and output options:
     Used together with ``--untrimmed-output``. The second read in a pair is
     written to this file when the processed pair was *not* trimmed.
 
-``--pair-filter=(any|both)``
+``--too-short-paired-output FILE``
+    Write the second read in a pair to this file if pair is too short. Use
+    together with ``--too-short-output``.
+
+``--too-long-paired-output FILE``
+    Write the second read in a pair to this file if pair is too long. Use
+    together with ``--too-long-output``.
+
+``--pair-filter=(any|both|first)``
     Which of the reads in a paired-end read have to match the filtering
     criterion in order for it to be filtered.
+
 
 Note that the option names can be abbreviated as long as it is clear which
 option is meant (unique prefix). For example, instead of ``--untrimmed-output``
 and ``--untrimmed-paired-output``, you can write ``--untrimmed-o`` and
 ``--untrimmed-p``.
+
+.. versionadded:: 1.18
+    ``--pair-filter=first``
+
+
+.. _paired-adapters:
+
+Paired adapters (dual indices)
+------------------------------
+
+.. note::
+    This feature has been added on a provisional basis. It may still change.
+    For example, Cutadapt may require that the adapters from the R1 and the R2
+    sets have matching names, which would allow for better error checking.
+
+When processing paired-end data, Cutadapt has two sets of adapters to work with: The ones that
+are to be found and removed in the forward read (R1), specified with ``-a``/``-g``/``-b``,
+and the ones to be found and removed in the reverse read (R2), specified with ``-A``/``-G``/``-B``.
+
+Normally, the program looks at the R1 and R2 reads independently. That is, the best matching R1
+adapter is removed from R1 and the best matching R2 adapter is removed from R2.
+
+To change this, the option ``--pair-adapters`` can be used. It causes each R1 adapter to be
+paired up with its corresponding R2 adapters. The first R1 adapter will be paired up with the first
+R2 adapter, and so on. The adapters are then always removed in pairs from a read pair. It is an
+error if the number of provided adapters is not identical for the R1 and R2 sets.
+
+This option was added to aid in demultiplexing Illumina libraries that contain
+`unique dual indexes (UDI) <https://support.illumina.com/bulletins/2018/08/understanding-unique-dual-indexes--udi--and-associated-library-p.html>`_.
+This scheme, also called “non-redundant indexing”, uses 96 unique i5 indices and 96 unique i7
+indices, which are only used in pairs, that is, the first i5 index is always used with the first i7
+index and so on.
+
+.. note::
+    If the adapters do not come in pairs, but all combinations are possible, see
+    :ref:`the section about combinatorial demultiplexing <combinatorial-demultiplexing>`.
+
+An example::
+
+    cutadapt --pair-adapters -a AAAAA -a GGGG -A CCCCC -a TTTT -o out.1.fastq -p out.2.fastq in.1.fastq in.2.fastq
+
+Here, the adapter pairs are (``AAAAA``, ``CCCCC``) and (``GGGG``, ``TTTT``). That is, paired-end
+reads will only be trimmed if either
+
+* ``AAAAA`` is found in R1 *and* ``CCCCC`` is found in R2,
+* or ``GGGG`` is found in R1 *and* ``TTTT`` is found in R2.
+
+The ``--pair-adapters`` option can be used also :ref:`when demultiplexing <demultiplexing>`.
+
+There is one limitation of the algorithm at the moment: The program looks for the best-matching R1 adapter
+first and then checks whether the corresponding R2 adapter can be found. If not, the read pair
+remains unchanged. However, it is in theory possible that a different R1 adapter that does not
+fit as well would have a partner that *can* be found. Some read pairs may therefore remain untrimmed.
+
+.. versionadded:: 2.1
 
 
 Interleaved paired-end reads
@@ -960,27 +1346,28 @@ a second input file::
 Cutadapt will detect if an input file is not properly interleaved by checking
 whether read names match and whether the file contains an even number of entries.
 
-When ``--interleaved`` is used, legacy mode is disabled (that is,
-read-modification options such as ``-q`` always apply to both reads).
 
+Trimming paired-end reads separately
+------------------------------------
 
-Legacy paired-end read trimming
--------------------------------
+.. warning::
 
-.. note::
-    This section describes the way paired-end trimming was done
-    in cutadapt before 1.8, where the ``-A``, ``-G``, ``-B`` options were not
-    available. It is less safe and more complicated, but you can still use it.
+    Trimming paired-end data in this way is not recommended as it
+    bypasses all paired-end error-checking, such as checking whether
+    the number of reads is the same in both files. You should use
+    the normal paired-end trimming mode with the ``-o``/``--p``
+    options described above.
 
 If you do not use any of the filtering options that discard reads, such
 as ``--discard``, ``--minimum-length`` or ``--maximum-length``, you can run
-cutadapt on each file separately::
+Cutadapt on each file separately::
 
-    cutadapt -a ADAPTER_FWD -o trimmed.1.fastq reads1.fastq
-    cutadapt -a ADAPTER_REV -o trimmed.2.fastq reads2.fastq
+    cutadapt -a ADAPTER_FWD -o trimmed.1.fastq.gz reads1.fastq.gz
+    cutadapt -a ADAPTER_REV -o trimmed.2.fastq.gz reads2.fastq.gz
+
 
 You can use the options that are listed under 'Additional modifications'
-in cutadapt's help output without problems. For example, if you want to
+in Cutadapt's help output without problems. For example, if you want to
 quality-trim the first read in each pair with a threshold of 10, and the
 second read in each pair with a threshold of 15, then the commands could
 be::
@@ -988,32 +1375,13 @@ be::
     cutadapt -q 10 -a ADAPTER_FWD -o trimmed.1.fastq reads1.fastq
     cutadapt -q 15 -a ADAPTER_REV -o trimmed.2.fastq reads2.fastq
 
-If you use any of the filtering options, you must use cutadapt in the following
-way (with the ``-p`` option) to make sure that read pairs remain sychronized.
 
-First trim the forward read, writing output to temporary files (we also
-add some quality trimming)::
+.. note::
 
-    cutadapt -q 10 -a ADAPTER_FWD --minimum-length 20 -o tmp.1.fastq -p tmp.2.fastq reads.1.fastq reads.2.fastq
-
-Then trim the reverse read, using the temporary files as input::
-
-    cutadapt -q 15 -a ADAPTER_REV --minimum-length 20 -o trimmed.2.fastq -p trimmed.1.fastq tmp.2.fastq tmp.1.fastq
-
-Finally, remove the temporary files::
-
-    rm tmp.1.fastq tmp.2.fastq
-
-Please see the previous section for a much simpler way of trimming paired-end
-reads!
-
-In legacy paired-end mode, the read-modifying options such as ``-q`` only
-apply to the first file in each call to cutadapt (first ``reads.1.fastq``, then
-``tmp.2.fastq`` in this example). Reads in the second file are not affected by those
-options, but by the filtering options: If a read in the first file is
-discarded, then the matching read in the second file is also filtered
-and not written to the output given by ``--paired-output`` in order to
-keep both output files synchronized.
+    Previous Cutadapt versions (up to 1.18) had a “legacy mode” that was
+    activated under certain conditions and in which the read-modifying
+    options such as ``-q`` would only apply to the forward/R1 reads.
+    This mode no longer exists.
 
 
 .. _multiple-adapters:
@@ -1026,7 +1394,7 @@ It is possible to specify more than one adapter sequence by using the options
 five ``-a`` adapters and two ``-g`` adapters. Each read will be searched for
 all given adapters, but **only the best matching adapter is removed**. (But it
 is possible to :ref:`trim more than one adapter from each
-read <more-than-one>`). This is how a command may look like to trim one of two
+read <more-than-one>`). This is how a command may look to trim one of two
 possible 3' adapters::
 
     cutadapt -a TGAGACACGCA -a AGGCACACAGGG -o output.fastq input.fastq
@@ -1038,10 +1406,12 @@ the FASTA file::
     cutadapt -a file:adapters.fasta -o output.fastq input.fastq
 
 All of the sequences in the file ``adapters.fasta`` will be used as 3'
-adapters. The other adapter options ``-b`` and ``-g`` also support this. Again,
-only the best matching adapter is trimmed from each read.
+adapters. The other adapter options ``-b`` and ``-g`` also support this.
+The ``file:`` syntax can be combined with the regular way of specifying an
+adapter. But no matter how you specify multiple adapter sequences, remember
+that only the best matching adapter is trimmed from each read.
 
-When cutadapt has multiple adapter sequences to work with, either specified
+When Cutadapt has multiple adapter sequences to work with, either specified
 explicitly on the command line or via a FASTA file, it decides in the
 following way which adapter should be trimmed:
 
@@ -1056,7 +1426,7 @@ following way which adapter should be trimmed:
   FASTA file.
 
 If your adapter sequences are all similar and differ only by a variable barcode
-sequence, you should use a single adapter sequence instead that
+sequence, you can use a single adapter sequence instead that
 :ref:`contains wildcard characters <wildcards>`.
 
 If you want to search for a combination of a 5' and a 3' adapter, you may want
@@ -1102,41 +1472,182 @@ Demultiplexing
 
 Cutadapt supports demultiplexing, which means that reads are written to different
 output files depending on which adapter was found in them. To use this, include
-the string ``{name}`` in the name of the output file and give each adapter a name.
+the string ``{name}`` in the name of the output file and :ref:`give each adapter
+a name <named-adapters>`.
 The path is then interpreted as a template and each trimmed read is written
 to the path in which ``{name}`` is replaced with the name of the adapter that
 was found in the read. Reads in which no adapter was found will be written to a
 file in which ``{name}`` is replaced with ``unknown``.
-
-.. note:
-    Demultiplexing is currently only supported for single-end reads. Paired-end
-    support is planned for one of the next versions.
 
 Example::
 
     cutadapt -a one=TATA -a two=GCGC -o trimmed-{name}.fastq.gz input.fastq.gz
 
 This command will create the three files ``demulti-one.fastq.gz``,
-``demulti-two.fastq.gz`` and ``demulti-unknown.fastq.gz``. You can :ref:`also
-provide adapter sequences in a FASTA file <multiple-adapters>`.
+``demulti-two.fastq.gz`` and ``demulti-unknown.fastq.gz``.
 
-In order to not trim the input files at all, but to only do multiplexing, use
-option ``--no-trim``. And if you want to output the reads in which no
-adapters were found to a different file, use the ``--untrimmed-output``
-parameter with a file name. Here is an example that uses both parameters and
-reads the adapters from a FASTA file (note that ``--untrimmed-output`` can be
-abbreviated)::
-
-    cutadapt -a file:barcodes.fasta --no-trim --untrimmed-o untrimmed.fastq.gz -o trimmed-{name}.fastq.gz input.fastq.gz
-
-Here is a made-up example for the ``barcodes.fasta`` file::
+More realistically, your “adapters” would actually be barcode sequences that you
+will want to :ref:`provide in a FASTA file <multiple-adapters>`. Here is a
+made-up example for such a ``barcodes.fasta`` file::
 
     >barcode01
-    TTAAGGCC
+    ^TTAAGGCC
     >barcode02
-    TAGCTAGC
+    ^TAGCTAGC
     >barcode03
-    ATGATGAT
+    ^ATGATGAT
+
+Our barcodes are located at the 5’ end of the R1 read, so we made sure to use
+:ref:`anchored 5’ adapters <anchored-5adapters>` by prefixing
+each sequence with the ``^`` character. We will then use ``-g file:barcodes.fasta``,
+where the ``-g`` option specifies that our adapters are 5’ adapters.
+
+These barcode sequences have a length of 8, which means that Cutadapt
+would not allow any errors when matching them: The default is to allow 10%
+errors, but 10% of 8 is 0.8, which is rounded down to 0. To allow one
+error, we increase the maximum error rate to 15% with ``-e 0.15``.
+Finally, we also use ``--no-indels`` because we don’t want to allow
+insertions or deletions. Also, with the ``--no-indels`` option, Cutadapt can
+use a different algorithm and demultiplexing will be many times faster.
+Here is the final command::
+
+    cutadapt -e 0.15 --no-indels -g file:barcodes.fasta -o "trimmed-{name}.fastq.gz" input.fastq.gz
+
+Demultiplexing is also supported for paired-end data if you provide the ``{name}`` template
+in both output file names (``-o`` and ``-p``). Example::
+
+    cutadapt -e 0.15 --no-indels -g file:barcodes.fasta -o trimmed-{name}.1.fastq.gz -p trimmed-{name}.2.fastq.gz input.1.fastq.gz input.2.fastq.gz
+
+Paired-end demultiplexing always uses the adapter matches of the *first* read to decide where a
+read should be written. If adapters for read 2 are given (``-A``/``-G``), they are detected and
+removed as normal, but these matches do not influence where the read pair is written. This is
+to ensure that read 1 and read 2 are always synchronized.
+
+To demultiplex using a barcode that is located on read 2, you can swap the roles of R1 and R2 for
+both the input and output files ::
+
+    cutadapt -e 0.15 --no-indels -g file:barcodes.fasta -o trimmed-{name}.2.fastq.gz -p trimmed-{name}.1.fastq.gz input.2.fastq.gz input.1.fastq.gz
+
+If you do this in a script or pipeline, it may be a good idea to add a comment to clarify that
+this reversal of R1 and R2 is intended.
+
+More advice on demultiplexing:
+
+* You can use ``--untrimmed-output`` to change the name of the output file that receives the
+  untrimmed reads (those in which no barcode could be found).
+* Similarly, you can use ``--untrimmed-paired-output`` to change the name of the output file that
+  receives the untrimmed R2 reads.
+* If you want to demultiplex, but keep the barcode in the reads, use the option ``--action=none``.
+
+
+.. _combinatorial-demultiplexing:
+
+Demultiplexing paired-end reads with combinatorial dual indexes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Illumina’s combinatorial dual indexing strategy uses a set of indexed adapters on R1 and another one
+on R2. Unlike
+`unique dual indexes (UDI) <https://support.illumina.com/bulletins/2018/08/understanding-unique-dual-indexes--udi--and-associated-library-p.html>`_,
+all combinations of indexes are possible.
+
+For demultiplexing this type of data ("combinatorial demultiplexing"), it is necessary to write each
+read pair to an output file depending on the adapters found on R1 *and* R2.
+
+Doing this with Cutadapt is similar to doing normal demultiplexing as described above, but you need
+to use ``{name1}}`` and ``{name2}`` in both output file name templates. For example::
+
+    cutadapt \
+        -e 0.15 --no-indels \
+        -g file:barcodes_fwd.fasta \
+        -G file:barcodes_rev.fasta \
+        -o trimmed-{name1}-{name2}.1.fastq.gz -p trimmed-{name1}-{name2}.2.fastq.gz \
+        input.1.fastq.gz input.2.fastq.gz
+
+The ``{name1}`` will be replaced with the name of the best-matching R1 adapter and ``{name2}}`` will
+be replaced with the name of the best-matching R2 adapter.
+
+If there was no match of an R1 adapter, ``{name1}`` is set to "unknown", and if there is no match of
+an R2 adapter, ``{name2}`` is set to "unknown". To discard read pairs for which one or both adapters
+could not be found, use ``--discard-untrimmed``.
+
+The ``--untrimmed-output`` and ``--untrimmed-paired-output`` options cannot be used.
+
+Read the :ref:`demultiplexing <demultiplexing>` section for how to choose the error rate etc.
+Also, the tips below about how to speed up demultiplexing apply even with combinatorial
+demultiplexing.
+
+.. versionadded:: 2.4
+
+
+.. _speed-up-demultiplexing:
+
+Speeding up demultiplexing
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Finding many adapters/barcodes simultaneously (which is what demultiplexing in Cutadapt is about),
+can be sped up tremendously by using the right options since Cutadapt will then be able to create an
+index of the barcode sequences instead of checking for each barcode separately. Currently, the
+following conditions need to be met in order for index creation to be enabled:
+
+* The barcodes/adapters must be anchored 5’ adapters (``-g ^ADAPTER``) or anchored 3’ adapters
+  (``-a ADAPTER$``). If you use ``file:`` to read in the adapter sequences from a FASTA file,
+  remember to add the ``^`` or ``$`` to each sequence in the FASTA file.
+* The maximum error rate (``-e``) must be set in such a way as to allow at most 2 errors or less.
+  For example, if the barcode has length 10, you can use ``-e 0.2`` (or lower).
+* The option ``--no-indels`` must be used.
+* No IUPAC wildcards must be used in the barcode/adapter. Also, you cannot use the option
+  ``--match-read-wildcards``.
+
+An index will be built for all the adapters that fulfill these criteria if there are at least two
+of them. You can provide additional adapters/barcodes, and they will just not be included in the
+index. Whether an index is created or not should not affect the results, only how fast you get them.
+
+To see whether an index is created, look for a message like this in the first few lines of
+Cutadapt’s output::
+
+    Building index of 23 adapters ...
+
+Hopefully some of the above restrictions will be lifted in the future.
+
+.. versionadded:: 1.15
+   Demultiplexing of paired-end data.
+
+.. versionadded:: 2.0
+   Added ability to use an index of adapters for speeding up demultiplexing
+
+
+Demultiplexing paired-end reads in mixed orientation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For some protocols, the barcode will be located either on R1 or on R2
+depending on the orientation in which the DNA fragment was sequenced.
+
+For example, the read layout could be either this ::
+
+    R1: barcode-forwardprimer-sequence  R2: reverseprimer-sequence
+
+or this ::
+
+    R1: reverseprimer-sequence  R2: barcode-forwardprimer-sequence
+
+To demultiplex such data with Cutadapt, choose one of the orientations first and
+demultiplex the reads as if only that existed in the data, using a command like this ::
+
+    cutadapt -g file:barcodes.fasta \
+        -o round1-{name}.R1.fastq.gz \
+        -p round1-{name}.R2.fastq.gz \
+        R1.fastq.gz R2.fastq.gz
+
+Then all the read pairs in which no barcode could be found will end up in
+``round1-unknown.R1.fastq.gz`` and ``round1-unknown.R2.fastq.gz``. This will
+also include the pairs in which the barcode was not actually in R1, but in R2. To
+demultiplex these reads as well, run Cutadapt a second time with those “unknown”
+files as input, but also reverse the roles of R1 and R2 ::
+
+    cutadapt -g file:barcodes.fasta \
+        -o round2-{name}.R2.fastq.gz \
+        -p round2-{name}.R1.fastq.gz \
+        round1-unknown.R2.fastq.gz round1-unknown.R1.fastq.gz
 
 
 .. _more-than-one:
@@ -1154,7 +1665,7 @@ As an example, assume you have a protocol in which a 5' adapter gets ligated
 to your DNA fragment, but it's possible that the adapter is ligated more than
 once. So your sequence could look like this::
 
-    ADAPTERADAPTERADAPTERMYSEQUENCE
+    ADAPTERADAPTERADAPTERmysequence
 
 To be on the safe side, you assume that there are at most five copies of the
 adapter sequence. This command can be used to trim the reads correctly::
@@ -1167,15 +1678,15 @@ works better for that particular case because it is allows you to require that
 the 3' adapter is trimmed only when the 5' adapter also occurs, and it cannot
 happen that the same adapter is trimmed twice.
 
-Before cutadapt supported linked adapters, the ``--times`` option was the
+Before Cutadapt supported linked adapters, the ``--times`` option was the
 recommended way to search for 5'/3' linked adapters. For completeness, we
 describe how it was done. For example, when the 5' adapter is *FIRST* and the
 3' adapter is *SECOND*, then the read could look like this::
 
-    FIRSTMYSEQUENCESECOND
+    FIRSTmysequenceSECOND
 
 That is, the sequence of interest is framed by the 5' and the 3' adapter. The
-following command can be used to trim such a read::
+following command would be used to trim such a read::
 
     cutadapt -g ^FIRST -a SECOND -n 2 ...
 
@@ -1185,44 +1696,43 @@ following command can be used to trim such a read::
 Illumina TruSeq
 ===============
 
-If you have reads containing Illumina TruSeq adapters, follow these
-steps.
+Illumina makes their adapter sequences available in the
+`Illumina Adapter Sequences Document <https://support.illumina.com/downloads/illumina-adapter-sequences-document-1000000002694.html>`_.
 
-Single-end reads as well as the first reads of paired-end data need to be
-trimmed with ``A`` + the “TruSeq Indexed Adapter”. Use only the prefix of the
-adapter sequence that is common to all Indexed Adapter sequences::
-
-    cutadapt -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC -o trimmed.fastq.gz reads.fastq.gz
-
-If you have paired-end data, trim also read 2 with the reverse complement of the
-“TruSeq Universal Adapter”. The full command-line looks as follows::
+As an example for how to use that information with Cutadapt, we show
+how to trim TruSeq adapters. The document gives the adapter sequence
+for read 1 as ``AGATCGGAAGAGCACACGTCTGAACTCCAGTCA`` and for read 2
+as ``AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT``. When using Cutadapt, this
+means you should trim your paired-end data as follows:
 
     cutadapt \
-		-a AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC \
-		-A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATT \
-		-o trimmed.1.fastq.gz -p trimmed.2.fastq.gz \
-		reads.1.fastq.gz reads.2.fastq.gz
+        -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCA \
+        -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
+        -o trimmed.R1.fastq.gz -p trimmed.R2.fastq.gz \
+        reads.R1.fastq.gz reads.R2.fastq.gz
 
 See also the :ref:`section about paired-end adapter trimming above <paired-end>`.
 
-If you want to simplify this a bit, you can also use the common prefix
-``AGATCGGAAGAGC`` as the adapter sequence in both cases. However, you should
-be aware that this sequence occurs multiple times in the human genome and it
-could therefore skew your results very slightly at those loci ::
+Keep in mind that Cutadapt removes the adapter that it finds and also the sequence
+following it, so even if the actual adapter sequence that is used in a protocol
+is longer than that (and possibly contains a variable index), it is sufficient to
+specify a prefix of the sequence(s).
 
-    cutadapt \
-		-a AGATCGGAAGAGC -A AGATCGGAAGAGC \
-		-o trimmed.1.fastq.gz -p trimmed.2.fastq.gz \
-		reads.1.fastq.gz reads.2.fastq.gz
+.. note::
+   Previous versions of this document also recommended using ``AGATCGGAAGAGC``
+   as adapter sequence for both read 1 and read 2, but you should avoid doing so
+   as that sequence occurs multiple times in the human genome.
 
-The adapter sequences can be found in the document `Illumina TruSeq Adapters
-De-Mystified <http://tucf-genomics.tufts.edu/documents/protocols/TUCF_Understanding_Illumina_TruSeq_Adapters.pdf>`__.
+Some older information is also available in the document `Illumina TruSeq Adapters
+De-Mystified <http://tucf-genomics.tufts.edu/documents/protocols/TUCF_Understanding_Illumina_TruSeq_Adapters.pdf>`_,
+but keep in mind that it does not cover newer protocols.
 
-Under some circumstances you may want to consider not trimming adapters at all.
-If you have whole-exome or whole-genome reads, there will be very few reads
-with adapters anyway. And if you use BWA-MEM, the trailing (5') bases of
-a read that do not match the reference are soft-clipped, which  covers those
-cases in which an adapter does occur.
+Under some circumstances, you may want to consider not trimming adapters at all.
+For example, a good library prepared for exome, genome or transcriptome
+sequencing should contain very few reads with adapters anyway. Also, some read
+mapping programs including BWA-MEM and STAR will soft-clip bases at the 3' ends
+of reads that do not match the reference, which will take care of adapters
+implicitly.
 
 
 .. _warnbase:
@@ -1230,7 +1740,7 @@ cases in which an adapter does occur.
 Warning about incomplete adapter sequences
 ------------------------------------------
 
-Sometimes cutadapt’s report ends with these lines::
+Sometimes Cutadapt’s report ends with these lines::
 
     WARNING:
         One or more of your adapter sequences may be incomplete.
@@ -1286,57 +1796,53 @@ Cutadapt supports the following options to deal with ``N`` bases in your reads:
     associated with them.
 
 
-.. _bisulfite:
-
-Bisulfite sequencing (RRBS)
-===========================
-
-When trimming reads that come from a library prepared with the RRBS (reduced
-representation bisulfite sequencing) protocol, the last two 3' bases must be
-removed in addition to the adapter itself. This can be achieved by using not
-the adapter sequence itself, but by adding two wildcard characters to its
-beginning. If the adapter sequence is ``ADAPTER``, the command for trimming
-should be::
-
-    cutadapt -a NNADAPTER -o output.fastq input.fastq
-
-Details can be found in `Babraham bioinformatics' "Brief guide to
-RRBS" <http://www.bioinformatics.babraham.ac.uk/projects/bismark/RRBS_Guide.pdf>`_.
-A summary follows.
-
-During RRBS library preparation, DNA is digested with the restriction enzyme
-MspI, generating a two-base overhang on the 5' end (``CG``). MspI recognizes
-the sequence ``CCGG`` and cuts
-between ``C`` and ``CGG``. A double-stranded DNA fragment is cut in this way::
-
-    5'-NNNC|CGGNNN-3'
-    3'-NNNGGC|CNNN-5'
-
-The fragment between two MspI restriction sites looks like this::
-
-    5'-CGGNNN...NNNC-3'
-      3'-CNNN...NNNGGC-5'
-
-Before sequencing (or PCR) adapters can be ligated, the missing base positions
-must be filled in with GTP and CTP::
-
-    5'-ADAPTER-CGGNNN...NNNCcg-ADAPTER-3'
-    3'-ADAPTER-gcCNNN...NNNGGC-ADAPTER-5'
-
-The filled-in bases, marked in lowercase above, do not contain any original
-methylation information, and must therefore not be used for methylation calling.
-By prefixing the adapter sequence with ``NN``, the bases will be automatically
-stripped during adapter trimming.
-
-
 Cutadapt's output
 =================
+
+Reporting
+---------
+
+Cutadapt will by default print a full report after it has finished processing
+the reads. To suppress all output except error messages, use the option
+``--quiet``.
+
+The report type can be changed to a one-line summary with the option
+``--report=minimal``. The output will be a tab-separated table (tsv) with one
+header row and one row of content. Here is an example::
+
+    $ cutadapt --report=minimal -a ... -m 20 -q 10 -o ... -p ... in.[12].fastq.gz
+    status in_reads in_bp     too_short too_long too_many_n out_reads w/adapters qualtrim_bp out_bp w/adapters2 qualtrim2_bp out2_bp
+    OK     1000000  202000000 24827     0        0          975173    28968      1674222     97441426 0 0 98492473
+
+This is the meaning of each column:
+
+=============== ==========================================================
+Column heading  Explanation
+=============== ==========================================================
+status          Incomplete adapter warning (``OK`` or ``WARN``)
+in_reads        Number of processed reads (read pairs for paired-end)
+in_bp           Number of processed basepairs
+too_short       Number of reads/read pairs that were too short
+too_long        Number of reads/read pairs that were too long
+too_many_n      Number of reads/read pairs that contained too many ``N``
+out_reads       Number of reads written
+w/adapters      Number of reads containing at least one adapter
+qualtrim_bp     Number of bases removed from R1 reads by quality trimming
+out_bp          Number of bases written to R1 reads
+w/adapters2     Number of R2 reads containing at least one adapter
+qualtrim2_bp    Number of bases removed from R3 reads by quality trimming
+out2_bp         Number of bases written
+=============== ==========================================================
+
+The last three fields are omitted for single-end data.
+
+.. versionadded: 1.18
 
 
 How to read the report
 ----------------------
 
-After every run, cutadapt prints out per-adapter statistics. The output
+After every run, Cutadapt prints out per-adapter statistics. The output
 starts with something like this::
 
     Sequence: 'ACGTACGTACGTTAGCTAGC'; Length: 20; Trimmed: 2402 times.
@@ -1346,13 +1852,13 @@ The meaning of this should be obvious.
 The next piece of information is this::
 
     No. of allowed errors:
-    0-9 bp: 0; 10-19 bp: 1; 20 bp: 2
+    0-7 bp: 0; 8-15 bp: 1; 16-20 bp: 2
 
 The adapter, as was shown above, has a length of 20
-characters. We are using the default error rate of 0.1. What this
-implies is shown above: Matches up to a length of 9 bp are allowed to
-have no errors. Matches of lengths 10-19 bp are allowd to have 1 error
-and matches of length 20 can have 2 errors. See also :ref:`the section about
+characters. We are using a custom error rate of 0.12. What this
+implies is shown above: Matches up to a length of 7 bp are allowed to
+have no errors. Matches of lengths 8-15 bp are allowd to have 1 error
+and matches of length 16 or more can have 2 errors. See also :ref:`the section about
 error-tolerant matching <error-tolerance>`.
 
 Finally, a table is output that gives more detailed information about
@@ -1365,17 +1871,25 @@ some rows are left out::
     4       57      39.1    0       57
     5       50      9.8     0       50
     6       35      2.4     0       35
+    7       13      0.3     0       1 12
+    8       31      0.1     1       0 31
     ...
     100     397     0.0     3       358 36 3
 
 The first row tells us the following: Three bases were removed in 140
 reads; randomly, one would expect this to occur 156.2 times; the maximum
 number of errors at that match length is 0 (this is actually redundant
-since we know already that no errors are allowed at lengths 0-9 bp).
+since we know already that no errors are allowed at lengths 0-7 bp).
 
 The last column shows the number of reads that had 0, 1, 2 ... errors.
 In the last row, for example, 358 reads matched the adapter with zero
 errors, 36 with 1 error, and 3 matched with 2 errors.
+
+In the row for length 7 is an apparent anomaly, where the max.err column
+is 0 and yet we have 31 reads matching with 1 error. This is because the
+matches are actually contributed by alignments to the first 8 bases of
+the adapter with one deletion, so 7 bases are removed but the error
+cut-off applied is for length 8.
 
 The "expect" column gives only a rough estimate of the number of
 sequences that is expected to match randomly, but it can help to
@@ -1419,7 +1933,11 @@ Format of the info file
 When the ``--info-file`` command-line parameter is given, detailed
 information about the found adapters is written to the given file. The
 output is a tab-separated text file. Each line corresponds to one read
-of the input file (unless `--times` is used, see below). The fields are:
+of the input file (unless `--times` is used, see below). A row is written
+for *all* reads, even those that are discarded from the final output
+FASTA/FASTQ due to filtering options (such as ``--minimum-length``).
+
+The fields in each row are:
 
 1. Read name
 2. Number of errors
@@ -1458,71 +1976,5 @@ accordingly for columns 9-11). For subsequent lines, the shown sequence are the
 ones that were used in subsequent rounds of adapter trimming, that is, they get
 successively shorter.
 
-Columns 9-11 have been added in cutadapt version 1.9.
-
-
-.. _algorithm:
-
-The alignment algorithm
-=======================
-
-Since the publication of the `EMBnet journal application note about
-cutadapt <http://dx.doi.org/10.14806/ej.17.1.200>`_, the alignment algorithm
-used for finding adapters has changed significantly. An overview of this new
-algorithm is given in this section. An even more detailed description is
-available in Chapter 2 of my PhD thesis `Algorithms and tools for the analysis
-of high-throughput DNA sequencing data <http://hdl.handle.net/2003/31824>`_.
-
-The algorithm is based on *semiglobal alignment*, also called *free-shift*,
-*ends-free* or *overlap* alignment. In a regular (global) alignment, the
-two sequences are compared from end to end and all differences occuring over
-that length are counted. In semiglobal alignment, the sequences are allowed to
-freely shift relative to each other and differences are only penalized in the
-overlapping region between them::
-
-      FANTASTIC
-   ELEFANT
-
-The prefix ``ELE`` and the suffix ``ASTIC`` do not have a counterpart in the
-respective other row, but this is not counted as an error. The overlap ``FANT``
-has a length of four characters.
-
-Traditionally, *alignment scores* are used to find an optimal overlap aligment:
-This means that the scoring function assigns a positive value to matches,
-while mismatches, insertions and deletions get negative values. The optimal
-alignment is then the one that has the maximal total score. Usage of scores
-has the disadvantage that they are not at all intuitive: What does a total score
-of *x* mean? Is that good or bad? How should a threshold be chosen in order to
-avoid finding alignments with too many errors?
-
-For cutadapt, the adapter alignment algorithm uses *unit costs* instead.
-This means that mismatches, insertions and deletions are counted as one error, which
-is easier to understand and allows to specify a single parameter for the
-algorithm (the maximum error rate) in order to describe how many errors are
-acceptable.
-
-There is a problem with this: When using costs instead of scores, we would like
-to minimize the total costs in order to find an optimal alignment. But then the
-best alignment would always be the one in which the two sequences do not overlap
-at all! This would be correct, but meaningless for the purpose of finding an
-adapter sequence.
-
-The optimization criteria are therefore a bit different. The basic idea is to
-consider the alignment optimal that maximizes the overlap between the two
-sequences, as long as the allowed error rate is not exceeded.
-
-Conceptually, the procedure is as follows:
-
-1. Consider all possible overlaps between the two sequences and compute an
-   alignment for each, minimizing the total number of errors in each one.
-2. Keep only those alignments that do not exceed the specified maximum error
-   rate.
-3. Then, keep only those alignments that have a maximal number of matches
-   (that is, there is no alignment with more matches).
-4. If there are multiple alignments with the same number of matches, then keep
-   only those that have the smallest error rate.
-5. If there are still multiple candidates left, choose the alignment that starts
-   at the leftmost position within the read.
-
-In Step 1, the different adapter types are taken into account: Only those
-overlaps that are actually allowed by the adapter type are actually considered.
+.. versionadded:: 1.9
+    Columns 9-11 were added.

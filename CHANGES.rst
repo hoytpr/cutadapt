@@ -2,6 +2,218 @@
 Changes
 =======
 
+v2.4 (in development)
+---------------------
+
+* :issue:`292`: Implement support for demultiplexing paired-end reads that use
+  combinatorial indexing.
+* :issue:`381`: Fixed ``--report=minimal`` not working.
+* :issue:`380`: Add a ``--fasta`` option for forcing that FASTA is written
+  to standard output even when input is FASTQ. Previously, forcing
+  FASTA was only possible by providing an output file name.
+
+v2.3 (2019-04-25)
+-----------------
+
+* :issue:`378`: The ``--pair-adapters`` option, added in version 2.1, was
+  not actually usable for demultiplexing.
+
+
+v2.2 (2019-04-20)
+---------------------
+
+* :issue:`376`: Fix a crash when using anchored 5' adapters together with
+  ``--no-indels`` and trying to trim an empty read.
+* :issue:`369`: Fix a crash when attempting to trim an empty read using a ``-g``
+  adapter with wildcards.
+
+v2.1 (2019-03-15)
+-----------------
+
+* :issue:`366`: Fix problems when combining ``--cores`` with
+  reading from standard input or writing to standard output.
+* :issue:`347`: Support :ref:`“paired adapters” <paired-adapters>`. One use case is
+  demultiplexing Illumina *Unique Dual Indices* (UDI).
+
+v2.0 (2019-03-06)
+-----------------
+
+This is a major new release with lots of bug fixes and new features, but
+also some backwards-incompatible changes. These should hopefully
+not affect too many users, but please make sure to review them and
+possibly update your scripts!
+
+Backwards-incompatible changes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* :issue:`329`: Linked adapters specified with ``-a ADAPTER1...ADAPTER2``
+  are no longer anchored by default. To get results consist with the old
+  behavior, use ``-a ^ADAPTER1...ADAPTER2`` instead.
+* Support for colorspace data was removed. Thus, the following command-line
+  options can no longer be used: ``-c``, ``-d``, ``-t``, ``--strip-f3``,
+  ``--maq``, ``--bwa``, ``--no-zero-cap``.
+* “Legacy mode” has been removed. This mode was enabled under certain
+  conditions and would change the behavior such that the read-modifying options
+  such as ``-q`` would only apply to the forward/R1 reads. This was necessary
+  for compatibility with old Cutadapt versions, but became increasingly
+  confusing.
+* :issue:`360`: Computation of the error rate of an adapter match no longer
+  counts the ``N`` wildcard bases. Previously, an adapter like ``N{18}CC``
+  (18 ``N`` wildcards followed by ``CC``) would effectively match
+  anywhere because the default error rate of 0.1 (10%) would allow for
+  two errors. The error rate of a match is now computed as
+  the number of non-``N`` bases in the matching part of the adapter
+  divided by the number of errors.
+* This release of Cutadapt requires at least Python 3.4 to run. Python 2.7
+  is no longer supported.
+
+Features
+~~~~~~~~
+
+* A progress indicator is printed while Cutadapt is working. If you redirect
+  standard error to a file, the indicator is disabled.
+* Reading of FASTQ files has gotten faster due to a new parser. The FASTA
+  and FASTQ reading/writing functions are now available as part of the
+  `dnaio library <https://github.com/marcelm/dnaio/>`_. This is a separate
+  Python package that can be installed independently from Cutadapt.
+  There is one regression at the moment: FASTQ files that use a second
+  header (after the "+") will have that header removed in the output.
+* Some other performance optimizations were made. Speedups of up to 15%
+  are possible.
+* Demultiplexing has become a lot faster :ref:`under certain conditions <speed-up-demultiplexing>`.
+* :issue:`335`: For linked adapters, it is now possible to
+  :ref:`specify which of the two adapters should be required <linked-override>`,
+  overriding the default.
+* :issue:`166`: By specifying ``--action=lowercase``, it is now possible
+  to not trim adapters, but to instead convert the section of the read
+  that would have been trimmed to lowercase.
+
+Bug fixes
+~~~~~~~~~
+
+* Removal of legacy mode fixes also :issue:`345`: ``--length`` would not enable
+  legacy mode.
+* The switch to ``dnaio`` also fixed :issue:`275`: Input files with
+  non-standard names now no longer lead to a crash. Instead the format
+  is now recognized from the file content.
+* Fix :issue:`354`: Sequences given using ``file:`` can now be unnamed.
+* Fix :issue:`257` and :issue:`242`: When only R1 or only R2 adapters are given, the
+  ``--pair-filter`` setting is now forced to ``both`` for the
+  ``--discard-untrimmed`` (and ``--untrimmed-(paired-)output``) filters.
+  Otherwise, with the default ``--pair-filter=any``, all pairs would be
+  considered untrimmed because one of the reads in the pair is always
+  untrimmed.
+
+Other
+~~~~~
+
+* :issue:`359`: The ``-f``/``--format`` option is now ignored and a warning
+  will be printed if it is used. The input file format is always
+  auto-detected.
+
+
+v1.18 (2018-09-07)
+------------------
+
+Features
+~~~~~~~~
+
+* Close :issue:`327`: Maximum and minimum lengths can now be specified
+  separately for R1 and R2 with ``-m LENGTH1:LENGTH2``. One of the
+  lengths can be omitted, in which case only the length of the other
+  read is checked (as in ``-m 17:`` or ``-m :17``).
+* Close :issue:`322`: Use ``-j 0`` to auto-detect how many cores to run on.
+  This should even work correctly on cluster systems when Cutadapt runs as
+  a batch job to which fewer cores than exist on the machine have been
+  assigned. Note that the number of threads used by ``pigz`` cannot be
+  controlled at the moment, see :issue:`290`.
+* Close :issue:`225`: Allow setting the maximum error rate and minimum overlap
+  length per adapter. A new :ref:`syntax for adapter-specific
+  parameters <trimming-parameters>` was added for this. Example:
+  ``-a "ADAPTER;min_overlap=5"``.
+* Close :issue:`152`: Using the new syntax for adapter-specific parameters,
+  it is now possible to allow partial matches of a 3' adapter at the 5' end
+  (and partial matches of a 5' adapter at the 3' end) by specifying the
+  ``anywhere`` parameter (as in ``-a "ADAPTER;anywhere"``).
+* Allow ``--pair-filter=first`` in addition to ``both`` and ``any``. If
+  used, a read pair is discarded if the filtering criterion applies to R1;
+  and R2 is ignored.
+* Close :issue:`112`: Implement a ``--report=minimal`` option for printing
+  a succinct two-line report in tab-separated value (tsv) format. Thanks
+  to :user:`jvolkening` for coming up with an initial patch!
+
+Bug fixes
+~~~~~~~~~
+
+* Fix :issue:`128`: The “Reads written” figure in the report incorrectly
+  included both trimmed and untrimmed reads if ``--untrimmed-output`` was used.
+
+Other
+~~~~~
+
+* The options ``--no-trim`` and ``--mask-adapter`` should now be written as
+  ``--action=mask`` and ``--action=none``. The old options still work.
+* This is the last release to support :ref:`colorspace data <colorspace>`.
+* This is the last release to support Python 2.
+
+
+v1.17 (2018-08-20)
+------------------
+
+* Close :issue:`53`: Implement adapters :ref:`that disallow internal matches <non-internal>`.
+  This is a bit like anchoring, but less strict: The adapter sequence
+  can appear at different lengths, but must always be at one of the ends.
+  Use ``-a ADAPTERX`` (with a literal ``X``) to disallow internal matches
+  for a 3' adapter. Use ``-g XADAPTER`` to disallow for a 5' adapter.
+* :user:`klugem` contributed PR :issue:`299`: The ``--length`` option (and its
+  alias ``-l``) can now be used with negative lengths, which will remove bases
+  from the beginning of the read instead of from the end.
+* Close :issue:`107`: Add a ``--discard-casava`` option to remove reads
+  that did not pass CASAVA filtering (this is possibly relevant only for
+  older datasets).
+* Fix :issue:`318`: Cutadapt should now be installable with Python 3.7.
+* Running Cutadapt under Python 3.3 is no longer supported (Python 2.7 or
+  3.4+ are needed)
+* Planned change: One of the next Cutadapt versions will drop support for
+  Python 2 entirely, requiring Python 3.
+
+v1.16 (2018-02-21)
+------------------
+
+* Fix :issue:`291`: When processing paired-end reads with multiple cores, there
+  could be errors about incomplete FASTQs although the files are intact.
+* Fix :issue:`280`: Quality trimming statistics incorrectly show the same
+  values for R1 and R2.
+
+v1.15 (2017-11-23)
+------------------
+
+* Cutadapt can now run on multiple CPU cores in parallel! To enable
+  it, use the option ``-j N`` (or the long form ``--cores=N``), where ``N`` is
+  the number of cores to use. Multi-core support is only available on Python 3,
+  and not yet with some command-line arguments. See
+  :ref:`the new section about multi-core in the documentation <multicore>`
+  for details. When writing ``.gz`` files, make sure you have ``pigz`` installed
+  to get the best speedup.
+* The plan is to make multi-core the default (automatically using as many cores as
+  are available) in future releases, so please test it and `report an
+  issue <https://github.com/marcelm/cutadapt/issues/>`_ if you find problems!
+* Issue :issue:`256`: ``--discard-untrimmed`` did not
+  have an effect on non-anchored linked adapters.
+* Issue :issue:`118`: Added support for demultiplexing of paired-end data.
+
+
+v1.14 (2017-06-16)
+------------------
+
+* Fix: Statistics for 3' part of a linked adapter were reported incorrectly
+* Fix `issue #244 <https://github.com/marcelm/cutadapt/issues/244>`_:
+  Quality trimming with ``--nextseq-trim`` would not apply to R2 when
+  trimming paired-end reads.
+* ``--nextseq-trim`` now disables legacy mode.
+* Fix `issue #246 <https://github.com/marcelm/cutadapt/issues/246>`_: installation
+  failed on non-UTF8 locale
+
 v1.13 (2017-03-16)
 ------------------
 
@@ -123,7 +335,7 @@ v1.8 (2015-03-14)
   such as ``-q`` (quality trimming) are applied to *both* reads. For backwards
   compatibility, read modifications are applied to the first read only if
   neither of ``-A``/``-G``/``-B``/``-U`` is used. See `the
-  documentation <http://cutadapt.readthedocs.org/en/latest/guide.html#paired-end>`_
+  documentation <http://cutadapt.readthedocs.io/en/latest/guide.html#paired-end>`_
   for details.
 
   This feature has not been extensively tested, so please give feedback if

@@ -1,24 +1,46 @@
-sudo: false
 language: python
+
+dist: xenial
+
 cache:
   directories:
     - $HOME/.cache/pip
+
 python:
-  - "2.6"
-  - "2.7"
-  - "3.3"
   - "3.4"
   - "3.5"
   - "3.6"
-  - "3.6-dev"
-  - "3.7-dev"
+  - "3.7"
   - "nightly"
+  - "3.8-dev"
 
 install:
-  - pip install --upgrade pip wheel
-  - pip install Cython
-  - pip install .
+  - pip install 'Cython>=0.28' tox-travis
 
 script:
-  - nosetests -P tests
+  - tox
 
+env:
+  global:
+    #- TWINE_REPOSITORY_URL=https://test.pypi.org/legacy/
+    - TWINE_USERNAME=marcelm
+    # TWINE_PASSWORD is set in Travis settings
+
+jobs:
+  include:
+    - stage: deploy
+      services:
+        - docker
+      python: "3.6"
+      install: python3 -m pip install Cython twine
+      if: tag IS present
+      script:
+        - |
+          python3 setup.py sdist
+          ./buildwheels.sh
+          ls -l dist/
+          python3 -m twine upload dist/*
+
+  allow_failures:
+    - python: "nightly"
+    - python: "3.8-dev"
